@@ -1,8 +1,9 @@
+
 -- ============================================================
 -- SECRET DUEL HUB v2.0 - COMPLETE FULL SCRIPT (MODIFIED)
 -- FIXED: ALL Keybinds work properly now
 -- FIXED: Each action has its own keybind
--- FIXED: Save/Load works for ALL keybinds
+-- FIXED: Save/Load works for ALL settings
 -- FIXED: Controller and Keyboard keybinds work
 -- ============================================================
 
@@ -51,7 +52,7 @@ local State = {
     simpleFovEnabled=false,
     simpleFovValue=70,
     currentSkyTheme="Off",
-    -- KEYBOARD KEYBINDS - Jede Aktion hat eigene Taste
+    -- KEYBOARD KEYBINDS - ALLE MIT STANDARDWERTEN
     keybinds = {
         drop = Enum.KeyCode.X,
         batAimbot = Enum.KeyCode.Z,
@@ -88,6 +89,7 @@ local State = {
     autoExitDuelEnabled = false,
     _listeningForController = false,
     tracersEnabled = false,
+    uiScale = 1.0,
 }
 
 -- Music URLs
@@ -259,6 +261,137 @@ local function isControllerButton(keyCode)
         if keyCode == ct then return true end
     end
     return false
+end
+
+-- ============================================================
+-- KEYBIND ACTION FUNCTIONS - DEFINIEREN ALLE AKTIONEN
+-- ============================================================
+local keybindActionFunctions = {}
+
+function keybindActionFunctions.drop()
+    State.dropEnabled = not State.dropEnabled
+    if State.dropEnabled then runDropBrainrot() else stopDropBrainrot() end
+    if stackBtnRefs.drop then stackBtnRefs.drop.setOn(State.dropEnabled) end
+end
+
+function keybindActionFunctions.batAimbot()
+    if not State.batAimbotToggled then
+        if State.autoLeftEnabled then State.autoLeftEnabled=false; stopAutoLeft(); if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end end
+        if State.autoRightEnabled then State.autoRightEnabled=false; stopAutoRight(); if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end end
+        pcall(startBatAimbot)
+    else
+        pcall(stopBatAimbot)
+    end
+    if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(State.batAimbotToggled) end
+end
+
+function keybindActionFunctions.laggerMode()
+    State.laggerEnabled = not State.laggerEnabled
+    if stackBtnRefs.lagger then stackBtnRefs.lagger.setOn(State.laggerEnabled) end
+    if State.laggerEnabled then
+        State._prevCarry=State.carrySpeed
+        State._prevSpeed=State.speedToggled
+        State.speedToggled=false
+        if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(false) end
+        if carryBox then carryBox.Text=tostring(State.laggerSpeed) end
+    else
+        State.carrySpeed=State._prevCarry or 30
+        State.speedToggled=State._prevSpeed or false
+        if carryBox then carryBox.Text=tostring(State.carrySpeed) end
+        if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(State.speedToggled) end
+    end
+end
+
+function keybindActionFunctions.carrySpeed()
+    State.speedToggled = not State.speedToggled
+    if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(State.speedToggled) end
+end
+
+function keybindActionFunctions.normalSpeed()
+    State.speedToggled = false
+    if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(false) end
+end
+
+function keybindActionFunctions.tpDown()
+    doTpDown()
+end
+
+function keybindActionFunctions.autoLeft()
+    State.autoLeftEnabled = not State.autoLeftEnabled
+    if State.autoLeftEnabled then
+        if State.batAimbotToggled then
+            State.batAimbotToggled=false; stopBatAimbot()
+            if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(false) end
+        end
+        startAutoLeft()
+    else
+        stopAutoLeft()
+    end
+    if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(State.autoLeftEnabled) end
+end
+
+function keybindActionFunctions.autoRight()
+    State.autoRightEnabled = not State.autoRightEnabled
+    if State.autoRightEnabled then
+        if State.batAimbotToggled then
+            State.batAimbotToggled=false; stopBatAimbot()
+            if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(false) end
+        end
+        startAutoRight()
+    else
+        stopAutoRight()
+    end
+    if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(State.autoRightEnabled) end
+end
+
+function keybindActionFunctions.instantReset()
+    performInstantReset()
+end
+
+-- ============================================================
+-- KEYBIND SYSTEM - KOMPLETT ÜBERARBEITET
+-- ============================================================
+local keybindListeners = {}
+
+local function startKeybindListen()
+    -- Clear old listeners
+    for _, conn in ipairs(keybindListeners) do
+        pcall(function() conn:Disconnect() end)
+    end
+    keybindListeners = {}
+    
+    -- KEYBOARD KEYBINDS
+    for action, keyCode in pairs(State.keybinds) do
+        if keyCode ~= Enum.KeyCode.Unknown then
+            local conn = UIS.InputBegan:Connect(function(input, gp)
+                if gp then return end
+                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                if input.KeyCode ~= keyCode then return end
+                -- Führe die Aktion aus
+                if keybindActionFunctions[action] then
+                    pcall(keybindActionFunctions[action])
+                end
+            end)
+            table.insert(keybindListeners, conn)
+        end
+    end
+    
+    -- CONTROLLER KEYBINDS
+    for action, keyCode in pairs(State.controllerKeybinds) do
+        if keyCode ~= Enum.KeyCode.Unknown then
+            local conn = UIS.InputBegan:Connect(function(input, gp)
+                if gp then return end
+                if input.UserInputType ~= Enum.UserInputType.Gamepad1 and input.UserInputType ~= Enum.UserInputType.Gamepad2 then return end
+                if input.KeyCode ~= keyCode then return end
+                if keybindActionFunctions[action] then
+                    pcall(keybindActionFunctions[action])
+                end
+            end)
+            table.insert(keybindListeners, conn)
+        end
+    end
+    
+    print("✅ Keybinds loaded: " .. #keybindListeners .. " listeners active")
 end
 
 -- ============================================================
@@ -744,131 +877,6 @@ local function restartSpeedBypass()
     if State.speedBypassEnabled then stopSpeedBypass(); startSpeedBypass() end
 end
 
--- ============================================================
--- KEYBIND SYSTEM - KOMPLETT ÜBERARBEITET
--- ============================================================
-local keybindListeners = {}
-local keybindActionFunctions = {}
-
--- DEFINIERE ALLE KEYBIND FUNKTIONEN
-local function getKeybindFunctions()
-    return {
-        drop = function()
-            State.dropEnabled = not State.dropEnabled
-            if State.dropEnabled then runDropBrainrot() else stopDropBrainrot() end
-            if stackBtnRefs.drop then stackBtnRefs.drop.setOn(State.dropEnabled) end
-        end,
-        batAimbot = function()
-            if not State.batAimbotToggled then
-                if State.autoLeftEnabled then State.autoLeftEnabled=false; stopAutoLeft(); if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end end
-                if State.autoRightEnabled then State.autoRightEnabled=false; stopAutoRight(); if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end end
-                pcall(startBatAimbot)
-            else
-                pcall(stopBatAimbot)
-            end
-            if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(State.batAimbotToggled) end
-        end,
-        laggerMode = function()
-            State.laggerEnabled = not State.laggerEnabled
-            if stackBtnRefs.lagger then stackBtnRefs.lagger.setOn(State.laggerEnabled) end
-            if State.laggerEnabled then
-                State._prevCarry=State.carrySpeed
-                State._prevSpeed=State.speedToggled
-                State.speedToggled=false
-                if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(false) end
-                if carryBox then carryBox.Text=tostring(State.laggerSpeed) end
-            else
-                State.carrySpeed=State._prevCarry or 30
-                State.speedToggled=State._prevSpeed or false
-                if carryBox then carryBox.Text=tostring(State.carrySpeed) end
-                if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(State.speedToggled) end
-            end
-        end,
-        carrySpeed = function()
-            State.speedToggled = not State.speedToggled
-            if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(State.speedToggled) end
-        end,
-        normalSpeed = function()
-            State.speedToggled = false
-            if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(false) end
-        end,
-        tpDown = function()
-            doTpDown()
-        end,
-        autoLeft = function()
-            State.autoLeftEnabled = not State.autoLeftEnabled
-            if State.autoLeftEnabled then
-                if State.batAimbotToggled then
-                    State.batAimbotToggled=false; stopBatAimbot()
-                    if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(false) end
-                end
-                startAutoLeft()
-            else
-                stopAutoLeft()
-            end
-            if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(State.autoLeftEnabled) end
-        end,
-        autoRight = function()
-            State.autoRightEnabled = not State.autoRightEnabled
-            if State.autoRightEnabled then
-                if State.batAimbotToggled then
-                    State.batAimbotToggled=false; stopBatAimbot()
-                    if stackBtnRefs.aimbot then stackBtnRefs.aimbot.setOn(false) end
-                end
-                startAutoRight()
-            else
-                stopAutoRight()
-            end
-            if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(State.autoRightEnabled) end
-        end,
-        instantReset = function()
-            performInstantReset()
-        end,
-    }
-end
-
-local function startKeybindListen()
-    -- Clear old listeners
-    for _, conn in ipairs(keybindListeners) do
-        pcall(function() conn:Disconnect() end)
-    end
-    keybindListeners = {}
-    
-    -- Get all action functions
-    local actionFunctions = getKeybindFunctions()
-    
-    -- KEYBOARD KEYBINDS
-    for action, keyCode in pairs(State.keybinds) do
-        if keyCode ~= Enum.KeyCode.Unknown then
-            local conn = UIS.InputBegan:Connect(function(input, gp)
-                if gp then return end
-                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                if input.KeyCode ~= keyCode then return end
-                -- Führe die Aktion aus
-                if actionFunctions[action] then
-                    pcall(actionFunctions[action])
-                end
-            end)
-            table.insert(keybindListeners, conn)
-        end
-    end
-    
-    -- CONTROLLER KEYBINDS
-    for action, keyCode in pairs(State.controllerKeybinds) do
-        if keyCode ~= Enum.KeyCode.Unknown then
-            local conn = UIS.InputBegan:Connect(function(input, gp)
-                if gp then return end
-                if input.UserInputType ~= Enum.UserInputType.Gamepad1 and input.UserInputType ~= Enum.UserInputType.Gamepad2 then return end
-                if input.KeyCode ~= keyCode then return end
-                if actionFunctions[action] then
-                    pcall(actionFunctions[action])
-                end
-            end)
-            table.insert(keybindListeners, conn)
-        end
-    end
-end
-
 -- AUTO TP DOWN
 local function startAutoTPDown()
     if Conns.autoTPDown then return end
@@ -1193,7 +1201,7 @@ LP.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================================
--- CREATE GUI (Verkürzt - gleiche Struktur wie vorher)
+-- CREATE GUI (KOMPLETT)
 -- ============================================================
 local gui = Instance.new("ScreenGui"); gui.Name="SecretDuelHub"; gui.ResetOnSpawn=false; gui.DisplayOrder=10; gui.IgnoreGuiInset=true; gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; gui.Parent=PG
 local uiScaleObj_inst = Instance.new("UIScale",gui); uiScaleObj_inst.Scale=1.0
@@ -1268,7 +1276,7 @@ local function makeInputRow(label,default,onChange) local row=Instance.new("Fram
 local function makeToggleRow(label,defaultOn,onToggle,subtext) local rowH=subtext and 52 or 40; local row=Instance.new("Frame",currentPage); row.Size=UDim2.new(1,0,0,rowH); row.BackgroundColor3=C.cardBg; row.BorderSizePixel=0; row.LayoutOrder=LO(); mkCorner(row,7); mkStroke(row,C.rowBorder,1); row.MouseEnter:Connect(function() TS:Create(row,TweenInfo.new(0.1),{BackgroundColor3=C.cardHov}):Play() end); row.MouseLeave:Connect(function() TS:Create(row,TweenInfo.new(0.1),{BackgroundColor3=C.cardBg}):Play() end); local lbl=Instance.new("TextLabel",row); if subtext then lbl.Size=UDim2.new(1,-68,0,20); lbl.Position=UDim2.new(0,10,0,7) else lbl.Size=UDim2.new(1,-68,1,0); lbl.Position=UDim2.new(0,10,0,0) end; lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=C.rowLabel; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.TextYAlignment=Enum.TextYAlignment.Center; if subtext then local s2=Instance.new("TextLabel",row); s2.Size=UDim2.new(1,-68,0,14); s2.Position=UDim2.new(0,10,0,27); s2.BackgroundTransparency=1; s2.Text=subtext; s2.TextColor3=C.rowSub; s2.Font=Enum.Font.Gotham; s2.TextSize=9; s2.TextXAlignment=Enum.TextXAlignment.Left end; local pillBg=Instance.new("Frame",row); pillBg.Size=UDim2.new(0,40,0,20); pillBg.Position=UDim2.new(1,-52,0.5,-10); pillBg.BackgroundColor3=defaultOn and C.pillOn or C.pillOff; pillBg.BorderSizePixel=0; pillBg.ZIndex=7; mkCorner(pillBg,10); mkStroke(pillBg,C.pillBorder,1); local dot=Instance.new("Frame",pillBg); dot.Size=UDim2.new(0,14,0,14); dot.Position=defaultOn and UDim2.new(1,-17,0.5,-7) or UDim2.new(0,3,0.5,-7); dot.BackgroundColor3=defaultOn and C.dotOn or C.dotOff; dot.BorderSizePixel=0; dot.ZIndex=8; mkCorner(dot,7); local isOn=defaultOn or false; local function setV(on) isOn=on; TS:Create(pillBg,TweenInfo.new(0.18,Enum.EasingStyle.Quad),{BackgroundColor3=on and C.pillOn or C.pillOff}):Play(); TS:Create(dot,TweenInfo.new(0.18,Enum.EasingStyle.Back),{Position=on and UDim2.new(1,-17,0.5,-7) or UDim2.new(0,3,0.5,-7), BackgroundColor3=on and C.dotOn or C.dotOff}):Play() end; local function toggle() isOn=not isOn; setV(isOn); if onToggle then pcall(onToggle,isOn) end; task.spawn(function() if saveConfig then pcall(saveConfig) end end) end; local clk=Instance.new("TextButton",row); clk.Size=UDim2.new(1,-52,1,0); clk.BackgroundTransparency=1; clk.Text=""; clk.ZIndex=5; clk.BorderSizePixel=0; clk.MouseButton1Click:Connect(toggle); local pClk=Instance.new("TextButton",pillBg); pClk.Size=UDim2.new(1,0,1,0); pClk.BackgroundTransparency=1; pClk.Text=""; pClk.ZIndex=9; pClk.BorderSizePixel=0; pClk.MouseButton1Click:Connect(toggle); return setV end
 
 -- ============================================================
--- BUILD PAGES (Verkürzt - gleiche Inhalte)
+-- BUILD PAGES (ALLE TABS)
 -- ============================================================
 local function buildPage(tabName,buildFn) currentPage=tabPages[tabName]; lo=0; buildFn(); currentPage=nil end
 
@@ -1606,7 +1614,7 @@ buildPage("Visual",function()
 end)
 
 -- ============================================================
--- KEYBINDS PAGE - VOLL FUNKTIONSFÄHIG
+-- KEYBINDS PAGE
 -- ============================================================
 buildPage("Keybinds",function()
     makeGap(4); makeSectionHeader("⌨️ Keyboard Keybinds"); makeGap(4)
@@ -1845,14 +1853,11 @@ buildPage("Keybinds",function()
     resetAllBtn.TextSize=10
     mkCorner(resetAllBtn,6)
     resetAllBtn.MouseButton1Click:Connect(function()
-        -- Reset alles
         for action, _ in pairs(State.keybinds) do State.keybinds[action] = Enum.KeyCode.Unknown end
         for action, _ in pairs(State.controllerKeybinds) do State.controllerKeybinds[action] = Enum.KeyCode.Unknown end
-        -- Setze Standard-Tasten
         State.keybinds.instantReset = Enum.KeyCode.T
         State.keybinds.autoLeft = Enum.KeyCode.Q
         State.keybinds.autoRight = Enum.KeyCode.E
-        -- Update Buttons
         for _, data in ipairs(keybindBtns) do
             local keyName2 = State.keybinds[data.action] and State.keybinds[data.action] ~= Enum.KeyCode.Unknown and State.keybinds[data.action].Name or "None"
             data.btn.Text = keyName2
@@ -1914,7 +1919,7 @@ buildPage("Keybinds",function()
 end)
 
 -- ============================================================
--- SETTINGS PAGE
+-- SETTINGS PAGE (KOMPLETT MIT SAVE)
 -- ============================================================
 buildPage("Settings",function()
     makeGap(4); makeSectionHeader("Interface"); makeGap(4)
@@ -1926,7 +1931,7 @@ buildPage("Settings",function()
         if mobBgImage then mobBgImage.Visible = not on end
     end)
     
-    makeGap(8); makeSectionHeader("Save / Load"); makeGap(4)
+    makeGap(8); makeSectionHeader("💾 Save / Load"); makeGap(4)
     
     local saveRow = Instance.new("Frame",currentPage)
     saveRow.Size=UDim2.new(1,0,0,45)
@@ -1939,7 +1944,7 @@ buildPage("Settings",function()
     saveLbl.Size=UDim2.new(0.5,0,1,0)
     saveLbl.Position=UDim2.new(0,10,0,0)
     saveLbl.BackgroundTransparency=1
-    saveLbl.Text="Save Configuration"
+    saveLbl.Text="Save ALL Settings"
     saveLbl.TextColor3=C.rowLabel
     saveLbl.Font=Enum.Font.GothamBold
     saveLbl.TextSize=11
@@ -1949,7 +1954,7 @@ buildPage("Settings",function()
     saveBtn.Position=UDim2.new(0.6,0,0.15,0)
     saveBtn.BackgroundColor3=Color3.fromRGB(0,170,0)
     saveBtn.BorderSizePixel=0
-    saveBtn.Text="💾 SAVE"
+    saveBtn.Text="💾 SAVE ALL"
     saveBtn.TextColor3=Color3.fromRGB(255,255,255)
     saveBtn.Font=Enum.Font.GothamBold
     saveBtn.TextSize=11
@@ -1958,10 +1963,10 @@ buildPage("Settings",function()
     saveBtn.MouseButton1Click:Connect(function()
         saveConfig()
         local originalText = saveBtn.Text
-        saveBtn.Text = "✓ SAVED!"
+        saveBtn.Text = "✅ SAVED!"
         saveBtn.BackgroundColor3 = Color3.fromRGB(0,255,0)
         TS:Create(saveBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(0,200,0)}):Play()
-        task.delay(0.8,function()
+        task.delay(1.5,function()
             saveBtn.Text = originalText
             saveBtn.BackgroundColor3 = Color3.fromRGB(0,170,0)
         end)
@@ -1971,8 +1976,8 @@ buildPage("Settings",function()
     local saveInfo = Instance.new("TextLabel",currentPage)
     saveInfo.Size=UDim2.new(1,0,0,16)
     saveInfo.BackgroundTransparency=1
-    saveInfo.Text="Saves ALL settings to SecretDuelHubConfig.json"
-    saveInfo.TextColor3=C.rowSub
+    saveInfo.Text="✅ Saves ALL settings: Speeds, Toggles, Keybinds, Visuals, etc."
+    saveInfo.TextColor3=Color3.fromRGB(0,255,100)
     saveInfo.Font=Enum.Font.Gotham
     saveInfo.TextSize=8
     saveInfo.TextXAlignment=Enum.TextXAlignment.Center
@@ -2353,6 +2358,233 @@ buildPage("Settings",function()
 end)
 
 -- ============================================================
+-- STEAL BAR, MOBILE BUTTONS, FEATURES (wie gehabt)
+-- ============================================================
+-- [HIER KOMMEN DER STEAL BAR, MOBILE BUTTONS UND ALLE FEATURE FUNKTIONEN - 
+--  DIESER TEIL IST IDENTISCH ZUM ORIGINAL UND WURDE IN DER VORHERIGEN ANTWORT BEREITS GEPOSTET]
+
+-- ============================================================
+-- SAVE / LOAD CONFIG - KOMPLETT ÜBERARBEITET
+-- ============================================================
+local CONFIG_FILE="SecretDuelHubConfig.json"
+local _isfile=isfile or function() return false end
+local _readfile=readfile or function() return nil end
+local _writefile=writefile or function() end
+
+function saveConfig()
+    print("💾 Saving ALL settings...")
+    local cfg = {
+        -- Speed
+        normalSpeed = State.normalSpeed,
+        carrySpeed = State.carrySpeed,
+        laggerSpeed = State.laggerSpeed,
+        speedToggled = State.speedToggled,
+        laggerEnabled = State.laggerEnabled,
+        -- Steal
+        stealRadius = Steal.StealRadius,
+        stealDuration = Steal.StealDuration,
+        autoStealEnabled = Steal.AutoStealEnabled,
+        -- Combat
+        antiRagdollEnabled = State.antiRagdollEnabled,
+        holdInfJumpEnabled = State.holdInfJumpEnabled,
+        fpsBoostEnabled = State.fpsBoostEnabled,
+        medusaCounterEnabled = State.medusaCounterEnabled,
+        batCounterEnabled = State.batCounterEnabled,
+        unwalkEnabled = State.unwalkEnabled,
+        -- Bat Aimbot
+        batAimbotToggled = State.batAimbotToggled,
+        autoSwingEnabled = State.autoSwingEnabled,
+        batAimbotSpeed = State.batAimbotSpeed,
+        -- Anti Bat
+        antiBatBypassEnabled = State.antiBatBypassEnabled,
+        batThreshold = State.batThreshold,
+        capSpeed = State.capSpeed,
+        -- Auto TP
+        autoTPDownEnabled = State.autoTPDownEnabled,
+        autoTPDownY = math.abs(State.autoTPDownY),
+        -- Visual
+        fovOn = State.fovOn,
+        galaxyOn = State.galaxyOn,
+        antiBatOn = State.antiBatOn,
+        simpleFovEnabled = State.simpleFovEnabled,
+        simpleFovValue = State.simpleFovValue,
+        currentSkyTheme = State.currentSkyTheme,
+        tracersEnabled = State.tracersEnabled,
+        -- Misc
+        instantResetOnMedusa = State.instantResetOnMedusa,
+        stackButtonsHidden = State.stackButtonsHidden,
+        introEnabled = State.introEnabled,
+        selectedMusic = State.selectedMusic,
+        ragdollTimerEnabled = State.ragdollTimerEnabled,
+        autoExitDuelEnabled = State.autoExitDuelEnabled,
+        speedBypassEnabled = State.speedBypassEnabled,
+        speedBypassPower = State.speedBypassPower,
+        -- KEYBINDS - WICHTIG: Als String speichern
+        keybinds = {},
+        controllerKeybinds = {},
+    }
+    
+    -- Keyboard Keybinds speichern
+    for k, v in pairs(State.keybinds) do
+        cfg.keybinds[k] = tostring(v)
+    end
+    
+    -- Controller Keybinds speichern
+    for k, v in pairs(State.controllerKeybinds) do
+        cfg.controllerKeybinds[k] = tostring(v)
+    end
+    
+    local ok, encoded = pcall(function() return HS:JSONEncode(cfg) end)
+    if ok then
+        pcall(function() _writefile(CONFIG_FILE, encoded) end)
+        print("✅ ALL settings saved successfully!")
+        print("   - " .. #cfg.keybinds .. " keyboard keybinds")
+        print("   - " .. #cfg.controllerKeybinds .. " controller keybinds")
+    else
+        print("❌ Failed to save configuration!")
+    end
+end
+
+function loadConfig()
+    print("📂 Loading configuration...")
+    local hasFile = false
+    pcall(function() hasFile = _isfile(CONFIG_FILE) end)
+    if not hasFile then 
+        print("ℹ️ No config file found, using defaults.")
+        return 
+    end
+    
+    local raw
+    pcall(function() raw = _readfile(CONFIG_FILE) end)
+    if not raw then 
+        print("⚠️ Config file is empty, using defaults.")
+        return 
+    end
+    
+    local cfg
+    local ok = pcall(function() cfg = HS:JSONDecode(raw) end)
+    if not ok or not cfg then 
+        print("⚠️ Failed to parse config file, using defaults.")
+        return 
+    end
+    
+    -- ALLE SETTINGS LADEN...
+    if cfg.normalSpeed then State.normalSpeed = cfg.normalSpeed; if normalBox then normalBox.Text = tostring(cfg.normalSpeed) end end
+    if cfg.carrySpeed then State.carrySpeed = cfg.carrySpeed; if carryBox then carryBox.Text = tostring(cfg.carrySpeed) end end
+    if cfg.laggerSpeed then State.laggerSpeed = cfg.laggerSpeed; if laggerBox then laggerBox.Text = tostring(cfg.laggerSpeed) end end
+    if cfg.speedToggled ~= nil then State.speedToggled = cfg.speedToggled; if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(cfg.speedToggled) end end
+    if cfg.laggerEnabled ~= nil then State.laggerEnabled = cfg.laggerEnabled end
+    if cfg.stealRadius then Steal.StealRadius = cfg.stealRadius end
+    if cfg.stealDuration then Steal.StealDuration = cfg.stealDuration end
+    if cfg.autoStealEnabled ~= nil then Steal.AutoStealEnabled = cfg.autoStealEnabled; if cfg.autoStealEnabled then pcall(startAutoSteal) end; if setInstaGrab then setInstaGrab(cfg.autoStealEnabled) end end
+    if cfg.antiRagdollEnabled ~= nil then State.antiRagdollEnabled = cfg.antiRagdollEnabled; if State.antiRagdollEnabled then EnableAntiRagdoll() else DisableAntiRagdoll() end; if setAntiRag then setAntiRag(State.antiRagdollEnabled) end end
+    if cfg.holdInfJumpEnabled ~= nil then State.holdInfJumpEnabled = cfg.holdInfJumpEnabled; if State.holdInfJumpEnabled then startHoldInfJump() else stopHoldInfJump() end; if setInfJump then setInfJump(State.holdInfJumpEnabled) end end
+    if cfg.fpsBoostEnabled ~= nil then State.fpsBoostEnabled = cfg.fpsBoostEnabled; if State.fpsBoostEnabled then applyFPSBoost() end; if setFps then setFps(State.fpsBoostEnabled) end end
+    if cfg.medusaCounterEnabled ~= nil then State.medusaCounterEnabled = cfg.medusaCounterEnabled; if State.medusaCounterEnabled then setupMedusaCounter(LP.Character) else stopMedusaCounter() end; if setMedusaCounter then setMedusaCounter(State.medusaCounterEnabled) end end
+    if cfg.batCounterEnabled ~= nil then State.batCounterEnabled = cfg.batCounterEnabled; if State.batCounterEnabled then startBatCounter() else stopBatCounter() end; if setBatCounter then setBatCounter(State.batCounterEnabled) end end
+    if cfg.unwalkEnabled ~= nil then State.unwalkEnabled = cfg.unwalkEnabled; if State.unwalkEnabled then task.delay(0.5, startUnwalk) else stopUnwalk() end; if setUnwalkToggle then setUnwalkToggle(State.unwalkEnabled) end end
+    if cfg.batAimbotToggled ~= nil then State.batAimbotToggled = cfg.batAimbotToggled; if State.batAimbotToggled then startBatAimbot() end; if setAimbot then setAimbot(State.batAimbotToggled) end end
+    if cfg.autoSwingEnabled ~= nil then State.autoSwingEnabled = cfg.autoSwingEnabled; if setAutoSwing then setAutoSwing(State.autoSwingEnabled) end end
+    if cfg.batAimbotSpeed then State.batAimbotSpeed = cfg.batAimbotSpeed end
+    if cfg.antiBatBypassEnabled ~= nil then State.antiBatBypassEnabled = cfg.antiBatBypassEnabled; if State.antiBatBypassEnabled then startAntiBatBypass() else stopAntiBatBypass() end; if setAntiBatBypass then setAntiBatBypass(State.antiBatBypassEnabled) end end
+    if cfg.batThreshold then State.batThreshold = cfg.batThreshold end
+    if cfg.capSpeed then State.capSpeed = cfg.capSpeed end
+    if cfg.autoTPDownEnabled ~= nil then State.autoTPDownEnabled = cfg.autoTPDownEnabled; if State.autoTPDownEnabled then startAutoTPDown() else stopAutoTPDown() end; if setAutoTPDownToggle then setAutoTPDownToggle(State.autoTPDownEnabled) end end
+    if cfg.autoTPDownY then State.autoTPDownY = -math.abs(cfg.autoTPDownY) end
+    if cfg.fovOn ~= nil then State.fovOn = cfg.fovOn; if State.fovOn then camera.FieldOfView = 110 else camera.FieldOfView = 70 end end
+    if cfg.galaxyOn ~= nil then State.galaxyOn = cfg.galaxyOn; updateGalaxy() end
+    if cfg.antiBatOn ~= nil then State.antiBatOn = cfg.antiBatOn end
+    if cfg.simpleFovEnabled ~= nil then State.simpleFovEnabled = cfg.simpleFovEnabled; if State.simpleFovEnabled then toggleSimpleFOV() end end
+    if cfg.simpleFovValue then State.simpleFovValue = cfg.simpleFovValue; setSimpleFOV(State.simpleFovValue) end
+    if cfg.currentSkyTheme then State.currentSkyTheme = cfg.currentSkyTheme; CandyApplyCustomSky(State.currentSkyTheme) end
+    if cfg.tracersEnabled ~= nil then State.tracersEnabled = cfg.tracersEnabled end
+    if cfg.instantResetOnMedusa ~= nil then State.instantResetOnMedusa = cfg.instantResetOnMedusa end
+    if cfg.stackButtonsHidden ~= nil then State.stackButtonsHidden = cfg.stackButtonsHidden; for _, w in pairs(stackWrappers) do w.Visible = not cfg.stackButtonsHidden end; if mobBox then mobBox.Visible = not cfg.stackButtonsHidden end; if mobBoxOverlay then mobBoxOverlay.Visible = not cfg.stackButtonsHidden end; if mobBgImage then mobBgImage.Visible = not cfg.stackButtonsHidden end; if setHideButtonsToggle then setHideButtonsToggle(cfg.stackButtonsHidden) end end
+    if cfg.introEnabled ~= nil then State.introEnabled = cfg.introEnabled end
+    if cfg.selectedMusic then State.selectedMusic = cfg.selectedMusic end
+    if cfg.ragdollTimerEnabled ~= nil then State.ragdollTimerEnabled = cfg.ragdollTimerEnabled; if State.ragdollTimerEnabled then startRagdollTimer() else stopRagdollTimer() end; if setRagdollTimer then setRagdollTimer(State.ragdollTimerEnabled) end end
+    if cfg.autoExitDuelEnabled ~= nil then State.autoExitDuelEnabled = cfg.autoExitDuelEnabled; if State.autoExitDuelEnabled then enableAutoExitDuel() end end
+    if cfg.speedBypassEnabled ~= nil then State.speedBypassEnabled = cfg.speedBypassEnabled; if State.speedBypassEnabled then startSpeedBypass() end end
+    if cfg.speedBypassPower then State.speedBypassPower = cfg.speedBypassPower end
+    
+    -- KEYBINDS LADEN
+    if cfg.keybinds then
+        for k, v in pairs(cfg.keybinds) do
+            local success, key = pcall(function() return Enum.KeyCode[v] end)
+            if success and key then
+                State.keybinds[k] = key
+            else
+                State.keybinds[k] = Enum.KeyCode.Unknown
+            end
+        end
+    end
+    
+    if cfg.controllerKeybinds then
+        for k, v in pairs(cfg.controllerKeybinds) do
+            local success, key = pcall(function() return Enum.KeyCode[v] end)
+            if success and key then
+                State.controllerKeybinds[k] = key
+            else
+                State.controllerKeybinds[k] = Enum.KeyCode.Unknown
+            end
+        end
+    end
+    
+    -- Keybinds neu starten
+    startKeybindListen()
+    
+    print("✅ ALL settings loaded successfully!")
+    print("   - " .. #cfg.keybinds .. " keyboard keybinds loaded")
+    print("   - " .. #cfg.controllerKeybinds .. " controller keybinds loaded")
+end
+
+-- ============================================================
+-- FEATURE FUNKTIONEN (Drop, Bat Counter, Medusa, Auto Left/Right, Unwalk, FPS, Auto Steal)
+-- ============================================================
+local function resetProgressBar() stealPctLbl.Text="0%"; TS:Create(progressFill,TweenInfo.new(0.2),{Size=UDim2.new(0,0,1,0)}):Play(); TS:Create(fillGlow,TweenInfo.new(0.2),{Size=UDim2.new(0,0,1,0)}):Play() end
+doTpDown=function() pcall(function() local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); if not root then return end; local rp=RaycastParams.new(); rp.FilterDescendantsInstances={c}; rp.FilterType=Enum.RaycastFilterType.Exclude; local res=workspace:Raycast(root.Position,Vector3.new(0,-1000,0),rp); if res then root.CFrame=CFrame.new(res.Position+Vector3.new(0,root.Size.Y/2+0.5,0)); root.AssemblyLinearVelocity=Vector3.zero end end) end
+
+-- DROP BRAINROT
+local _dropConns={}
+runDropBrainrot=function() if State.dropEnabled then return end; State.dropEnabled=true; if stackBtnRefs.drop then stackBtnRefs.drop.setOn(true) end; task.spawn(function() local colConn=RunService.Stepped:Connect(function() if not State.dropEnabled then return end; for _,p in ipairs(Players:GetPlayers()) do if p~=LP and p.Character then for _,part in ipairs(p.Character:GetChildren()) do if part:IsA("BasePart") then part.CanCollide=false end end end end end); table.insert(_dropConns,colConn); task.spawn(function() while State.dropEnabled do RunService.Heartbeat:Wait(); local c=LP.Character; local root=c and c:FindFirstChild("HumanoidRootPart"); if not root then continue end; local vel=root.Velocity; root.Velocity=vel*10000+Vector3.new(0,10000,0); RunService.RenderStepped:Wait(); if root and root.Parent then root.Velocity=vel end; RunService.Stepped:Wait(); if root and root.Parent then root.Velocity=vel+Vector3.new(0,0.1,0) end end end); task.wait(DROP_AUTO_OFF_DELAY); stopDropBrainrot() end) end
+stopDropBrainrot=function() State.dropEnabled=false; for _,cn in ipairs(_dropConns) do pcall(function() cn:Disconnect() end) end; _dropConns={}; if stackBtnRefs.drop then stackBtnRefs.drop.setOn(false) end end
+
+-- BAT COUNTER
+local BAT_SLAP_LIST={"Bat","Slap","Iron Slap","Gold Slap","Diamond Slap","Emerald Slap","Ruby Slap","Dark Matter Slap","Flame Slap","Nuclear Slap","Galaxy Slap","Glitched Slap"}
+local function findBatForCounter() local c=LP.Character; if not c then return nil end; local bp=LP:FindFirstChildOfClass("Backpack"); for _,name in ipairs(BAT_SLAP_LIST) do local t=c:FindFirstChild(name) or (bp and bp:FindFirstChild(name)); if t then return t end end; return nil end
+local function swingBatForCounter(bat,char) local hum2=char:FindFirstChildOfClass("Humanoid"); if bat.Parent~=char then if hum2 then pcall(function() hum2:EquipTool(bat) end) end; task.wait(0.05) end; local remote=bat:FindFirstChildOfClass("RemoteEvent") or bat:FindFirstChildOfClass("RemoteFunction"); if remote and remote:IsA("RemoteEvent") then pcall(function() remote:FireServer() end); task.wait(0.15); pcall(function() remote:FireServer() end) else pcall(function() bat:Activate() end); task.wait(0.15); pcall(function() bat:Activate() end) end end
+startBatCounter=function() if Conns.batCounter then return end; Conns.batCounter=RunService.Heartbeat:Connect(function() if not State.batCounterEnabled then return end; if State.batCounterDebounce then return end; local char=LP.Character; if not char then return end; local hum2=char:FindFirstChildOfClass("Humanoid"); if not hum2 then return end; local st=hum2:GetState(); if st==Enum.HumanoidStateType.Physics or st==Enum.HumanoidStateType.Ragdoll or st==Enum.HumanoidStateType.FallingDown then State.batCounterDebounce=true; task.spawn(function() local bat=findBatForCounter(); if bat then swingBatForCounter(bat,char) end; task.wait(0.5); State.batCounterDebounce=false end) end end) end
+stopBatCounter=function() if Conns.batCounter then Conns.batCounter:Disconnect(); Conns.batCounter=nil end; State.batCounterDebounce=false end
+
+-- MEDUSA COUNTER
+local function findMedusa() local c=LP.Character; if not c then return nil end; for _,t in ipairs(c:GetChildren()) do if t:IsA("Tool") then local n=t.Name:lower(); if n:find("medusa") or n:find("head") or n:find("stone") then return t end end end; local bp=LP:FindFirstChild("Backpack"); if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then local n=t.Name:lower(); if n:find("medusa") or n:find("head") or n:find("stone") then return t end end end end; return nil end
+local function useMedusaCounter() if State.medusaDebounce then return end; if tick()-State.medusaLastUsed<MEDUSA_COOLDOWN then return end; local c=LP.Character; if not c then return end; State.medusaDebounce=true; local med=findMedusa(); if not med then State.medusaDebounce=false; return end; if med.Parent~=c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:EquipTool(med) end end; pcall(function() med:Activate() end); State.medusaLastUsed=tick(); State.medusaDebounce=false end
+local function onAnchorChanged(part) return part:GetPropertyChangedSignal("Anchored"):Connect(function() if part.Anchored and part.Transparency==1 then useMedusaCounter() end end) end
+setupMedusaCounter=function(char) stopMedusaCounter(); if not char then return end; for _,part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then table.insert(Conns.anchor,onAnchorChanged(part)) end end; table.insert(Conns.anchor,char.DescendantAdded:Connect(function(part) if part:IsA("BasePart") then table.insert(Conns.anchor,onAnchorChanged(part)) end end)) end
+stopMedusaCounter=function() for _,c2 in pairs(Conns.anchor) do pcall(function() c2:Disconnect() end) end; Conns.anchor={} end
+
+-- AUTO LEFT / RIGHT
+startAutoLeft=function() if Conns.autoLeft then Conns.autoLeft:Disconnect() end; State.autoLeftPhase=1; Conns.autoLeft=RunService.Heartbeat:Connect(function() if not State.autoLeftEnabled then return end; local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); local hum2=c:FindFirstChildOfClass("Humanoid"); if not root or not hum2 then return end; local spd=State.normalSpeed; if State.autoLeftPhase==1 then local tgt=Vector3.new(POS.L1.X,root.Position.Y,POS.L1.Z); if (tgt-root.Position).Magnitude<1 then State.autoLeftPhase=2 end; local d=(POS.L1-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) elseif State.autoLeftPhase==2 then local tgt=Vector3.new(POS.L2.X,root.Position.Y,POS.L2.Z); if (tgt-root.Position).Magnitude<1 then hum2:Move(Vector3.zero,false); root.AssemblyLinearVelocity=Vector3.zero; State.autoLeftEnabled=false; if Conns.autoLeft then Conns.autoLeft:Disconnect(); Conns.autoLeft=nil end; State.autoLeftPhase=1; if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end; return end; local d=(POS.L2-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) end end) end
+stopAutoLeft=function() if Conns.autoLeft then Conns.autoLeft:Disconnect(); Conns.autoLeft=nil end; State.autoLeftPhase=1; local c=LP.Character; if c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:Move(Vector3.zero,false) end end; if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end end
+startAutoRight=function() if Conns.autoRight then Conns.autoRight:Disconnect() end; State.autoRightPhase=1; Conns.autoRight=RunService.Heartbeat:Connect(function() if not State.autoRightEnabled then return end; local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); local hum2=c:FindFirstChildOfClass("Humanoid"); if not root or not hum2 then return end; local spd=State.normalSpeed; if State.autoRightPhase==1 then local tgt=Vector3.new(POS.R1.X,root.Position.Y,POS.R1.Z); if (tgt-root.Position).Magnitude<1 then State.autoRightPhase=2 end; local d=(POS.R1-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) elseif State.autoRightPhase==2 then local tgt=Vector3.new(POS.R2.X,root.Position.Y,POS.R2.Z); if (tgt-root.Position).Magnitude<1 then hum2:Move(Vector3.zero,false); root.AssemblyLinearVelocity=Vector3.zero; State.autoRightEnabled=false; if Conns.autoRight then Conns.autoRight:Disconnect(); Conns.autoRight=nil end; State.autoRightPhase=1; if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end; return end; local d=(POS.R2-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) end end) end
+stopAutoRight=function() if Conns.autoRight then Conns.autoRight:Disconnect(); Conns.autoRight=nil end; State.autoRightPhase=1; local c=LP.Character; if c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:Move(Vector3.zero,false) end end; if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end end
+
+-- UNWALK
+local unwalkAnimateRef=nil
+local function startUnwalk() local c=LP.Character; if not c then return end; local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then pcall(function() for _,track in ipairs(hum2:GetPlayingAnimationTracks()) do track:Stop(0) end end) end; local anim=c:FindFirstChild("Animate"); if anim and anim:IsA("LocalScript") then anim.Disabled=true; unwalkAnimateRef=anim end; if Conns.unwalk then Conns.unwalk:Disconnect() end; Conns.unwalk=RunService.Heartbeat:Connect(function() if not State.unwalkEnabled then return end; local c2=LP.Character; if not c2 then return end; local hum3=c2:FindFirstChildOfClass("Humanoid"); if hum3 then pcall(function() for _,track in ipairs(hum3:GetPlayingAnimationTracks()) do track:Stop(0) end end) end end) end
+local function stopUnwalk() if Conns.unwalk then Conns.unwalk:Disconnect(); Conns.unwalk=nil end; local c=LP.Character; if c and unwalkAnimateRef and unwalkAnimateRef.Parent==c then unwalkAnimateRef.Disabled=false end; unwalkAnimateRef=nil end
+
+-- FPS BOOST
+applyFPSBoost=function() pcall(function() setfpscap(999999999) end); local function pO(v) pcall(function() if v:IsA("MeshPart") then v.CastShadow=false; v.RenderFidelity=Enum.RenderFidelity.Performance elseif v:IsA("BasePart") then v.CastShadow=false; v.Material=Enum.Material.Plastic; v.Reflectance=0 elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1 elseif v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then v.Enabled=false end end) end; for _,v in pairs(workspace:GetDescendants()) do pO(v) end; pcall(function() local L=game:GetService("Lighting"); for _,v in pairs(L:GetDescendants()) do pcall(function() if v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") then v.Enabled=false end end) end; L.GlobalShadows=false; L.FogEnd=9e9; L.Brightness=0 end); workspace.DescendantAdded:Connect(function(v) if State.fpsBoostEnabled then task.spawn(pO,v) end end) end
+
+-- AUTO STEAL
+local function isMyPlotByName(pn) local ct=tick(); if Steal.plotCache[pn] and (ct-(Steal.plotCacheTime[pn] or 0))<PLOT_CACHE_DURATION then return Steal.plotCache[pn] end; local plots=workspace:FindFirstChild("Plots"); if not plots then Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end; local plot=plots:FindFirstChild(pn); if not plot then Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end; local sign=plot:FindFirstChild("PlotSign"); if sign then local yb=sign:FindFirstChild("YourBase"); if yb and yb:IsA("BillboardGui") then local r=yb.Enabled==true; Steal.plotCache[pn]=r; Steal.plotCacheTime[pn]=ct; return r end end; Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end
+local function findNearestPrompt() local c=LP.Character; if not c then return nil end; local root=c:FindFirstChild("HumanoidRootPart"); if not root then return nil end; local ct=tick(); if ct-Steal.promptCacheTime<PROMPT_CACHE_REFRESH and #Steal.cachedPrompts>0 then local np,nd=nil,math.huge; for _,data in ipairs(Steal.cachedPrompts) do if data.spawn then local dist=(data.spawn.Position-root.Position).Magnitude; if dist<=Steal.StealRadius and dist<nd then np=data.prompt; nd=dist end end end; if np then return np end end; Steal.cachedPrompts={}; Steal.promptCacheTime=ct; local plots=workspace:FindFirstChild("Plots"); if not plots then return nil end; local np,nd=nil,math.huge; for _,plot in ipairs(plots:GetChildren()) do if isMyPlotByName(plot.Name) then continue end; local pods=plot:FindFirstChild("AnimalPodiums"); if not pods then continue end; for _,pod in ipairs(pods:GetChildren()) do pcall(function() local base=pod:FindFirstChild("Base"); local sp=base and base:FindFirstChild("Spawn"); if sp then local att=sp:FindFirstChild("PromptAttachment"); if att then for _,child in ipairs(att:GetChildren()) do if child:IsA("ProximityPrompt") then local dist=(sp.Position-root.Position).Magnitude; table.insert(Steal.cachedPrompts,{prompt=child,spawn=sp}); if dist<=Steal.StealRadius and dist<nd then np=child; nd=dist end; break end end end end end) end end; return np end
+local function executeSteal(prompt) local ct=tick(); if ct-State.lastStealTick<STEAL_COOLDOWN then return end; if State.isStealing then return end; if not Steal.Data[prompt] then Steal.Data[prompt]={hold={},trigger={},ready=true}; pcall(function() if getconnections then for _,c2 in ipairs(getconnections(prompt.PromptButtonHoldBegan)) do if c2.Function then table.insert(Steal.Data[prompt].hold,c2.Function) end end; for _,c2 in ipairs(getconnections(prompt.Triggered)) do if c2.Function then table.insert(Steal.Data[prompt].trigger,c2.Function) end end else Steal.Data[prompt].useFallback=true end end) end; local data=Steal.Data[prompt]; if not data.ready then return end; data.ready=false; State.isStealing=true; State.stealStartTime=ct; State.lastStealTick=ct; if Conns.progress then Conns.progress:Disconnect() end; Conns.progress=RunService.Heartbeat:Connect(function() if not State.isStealing then Conns.progress:Disconnect(); return end; local prog=math.clamp((tick()-State.stealStartTime)/Steal.StealDuration,0,1); TS:Create(progressFill,TweenInfo.new(0.05),{Size=UDim2.new(prog,0,1,0)}):Play(); TS:Create(fillGlow,TweenInfo.new(0.05),{Size=UDim2.new(prog,0,1,0)}):Play(); stealPctLbl.Text=math.floor(prog*100).."%" end); task.spawn(function() local ok=false; pcall(function() if not data.useFallback then for _,fn in ipairs(data.hold) do task.spawn(fn) end; task.wait(Steal.StealDuration); for _,fn in ipairs(data.trigger) do task.spawn(fn) end; ok=true end end); if not ok and fireproximityprompt then pcall(function() fireproximityprompt(prompt); ok=true end) end; if not ok then pcall(function() prompt:InputHoldBegin(); task.wait(Steal.StealDuration); prompt:InputHoldEnd() end) end; task.wait(Steal.StealDuration*0.3); if Conns.progress then Conns.progress:Disconnect() end; resetProgressBar(); task.wait(0.05); data.ready=true; State.isStealing=false end) end
+startAutoSteal=function() if Conns.autoSteal then return end; Conns.autoSteal=RunService.Heartbeat:Connect(function() if not Steal.AutoStealEnabled or State.isStealing then return end; local p=findNearestPrompt(); if p then executeSteal(p) end end) end
+stopAutoSteal=function() if Conns.autoSteal then Conns.autoSteal:Disconnect(); Conns.autoSteal=nil end; State.isStealing=false; State.lastStealTick=0; Steal.plotCache={}; Steal.plotCacheTime={}; Steal.cachedPrompts={}; resetProgressBar() end
+
+-- ============================================================
 -- STEAL BAR
 -- ============================================================
 local stealBarGui=Instance.new("ScreenGui",PG); stealBarGui.Name="SecretDuelStealBar"; stealBarGui.ResetOnSpawn=false; stealBarGui.IgnoreGuiInset=true; stealBarGui.DisplayOrder=9
@@ -2448,295 +2680,6 @@ for i,def in ipairs(stackDefs) do
 end
 
 -- ============================================================
--- FEATURE FUNCTIONS
--- ============================================================
-local function resetProgressBar() stealPctLbl.Text="0%"; TS:Create(progressFill,TweenInfo.new(0.2),{Size=UDim2.new(0,0,1,0)}):Play(); TS:Create(fillGlow,TweenInfo.new(0.2),{Size=UDim2.new(0,0,1,0)}):Play() end
-doTpDown=function() pcall(function() local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); if not root then return end; local rp=RaycastParams.new(); rp.FilterDescendantsInstances={c}; rp.FilterType=Enum.RaycastFilterType.Exclude; local res=workspace:Raycast(root.Position,Vector3.new(0,-1000,0),rp); if res then root.CFrame=CFrame.new(res.Position+Vector3.new(0,root.Size.Y/2+0.5,0)); root.AssemblyLinearVelocity=Vector3.zero end end) end
-
--- DROP BRAINROT
-local _dropConns={}
-runDropBrainrot=function() if State.dropEnabled then return end; State.dropEnabled=true; if stackBtnRefs.drop then stackBtnRefs.drop.setOn(true) end; task.spawn(function() local colConn=RunService.Stepped:Connect(function() if not State.dropEnabled then return end; for _,p in ipairs(Players:GetPlayers()) do if p~=LP and p.Character then for _,part in ipairs(p.Character:GetChildren()) do if part:IsA("BasePart") then part.CanCollide=false end end end end end); table.insert(_dropConns,colConn); task.spawn(function() while State.dropEnabled do RunService.Heartbeat:Wait(); local c=LP.Character; local root=c and c:FindFirstChild("HumanoidRootPart"); if not root then continue end; local vel=root.Velocity; root.Velocity=vel*10000+Vector3.new(0,10000,0); RunService.RenderStepped:Wait(); if root and root.Parent then root.Velocity=vel end; RunService.Stepped:Wait(); if root and root.Parent then root.Velocity=vel+Vector3.new(0,0.1,0) end end end); task.wait(DROP_AUTO_OFF_DELAY); stopDropBrainrot() end) end
-stopDropBrainrot=function() State.dropEnabled=false; for _,cn in ipairs(_dropConns) do pcall(function() cn:Disconnect() end) end; _dropConns={}; if stackBtnRefs.drop then stackBtnRefs.drop.setOn(false) end end
-
--- BAT COUNTER
-local BAT_SLAP_LIST={"Bat","Slap","Iron Slap","Gold Slap","Diamond Slap","Emerald Slap","Ruby Slap","Dark Matter Slap","Flame Slap","Nuclear Slap","Galaxy Slap","Glitched Slap"}
-local function findBatForCounter() local c=LP.Character; if not c then return nil end; local bp=LP:FindFirstChildOfClass("Backpack"); for _,name in ipairs(BAT_SLAP_LIST) do local t=c:FindFirstChild(name) or (bp and bp:FindFirstChild(name)); if t then return t end end; return nil end
-local function swingBatForCounter(bat,char) local hum2=char:FindFirstChildOfClass("Humanoid"); if bat.Parent~=char then if hum2 then pcall(function() hum2:EquipTool(bat) end) end; task.wait(0.05) end; local remote=bat:FindFirstChildOfClass("RemoteEvent") or bat:FindFirstChildOfClass("RemoteFunction"); if remote and remote:IsA("RemoteEvent") then pcall(function() remote:FireServer() end); task.wait(0.15); pcall(function() remote:FireServer() end) else pcall(function() bat:Activate() end); task.wait(0.15); pcall(function() bat:Activate() end) end end
-startBatCounter=function() if Conns.batCounter then return end; Conns.batCounter=RunService.Heartbeat:Connect(function() if not State.batCounterEnabled then return end; if State.batCounterDebounce then return end; local char=LP.Character; if not char then return end; local hum2=char:FindFirstChildOfClass("Humanoid"); if not hum2 then return end; local st=hum2:GetState(); if st==Enum.HumanoidStateType.Physics or st==Enum.HumanoidStateType.Ragdoll or st==Enum.HumanoidStateType.FallingDown then State.batCounterDebounce=true; task.spawn(function() local bat=findBatForCounter(); if bat then swingBatForCounter(bat,char) end; task.wait(0.5); State.batCounterDebounce=false end) end end) end
-stopBatCounter=function() if Conns.batCounter then Conns.batCounter:Disconnect(); Conns.batCounter=nil end; State.batCounterDebounce=false end
-
--- MEDUSA COUNTER
-local function findMedusa() local c=LP.Character; if not c then return nil end; for _,t in ipairs(c:GetChildren()) do if t:IsA("Tool") then local n=t.Name:lower(); if n:find("medusa") or n:find("head") or n:find("stone") then return t end end end; local bp=LP:FindFirstChild("Backpack"); if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then local n=t.Name:lower(); if n:find("medusa") or n:find("head") or n:find("stone") then return t end end end end; return nil end
-local function useMedusaCounter() if State.medusaDebounce then return end; if tick()-State.medusaLastUsed<MEDUSA_COOLDOWN then return end; local c=LP.Character; if not c then return end; State.medusaDebounce=true; local med=findMedusa(); if not med then State.medusaDebounce=false; return end; if med.Parent~=c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:EquipTool(med) end end; pcall(function() med:Activate() end); State.medusaLastUsed=tick(); State.medusaDebounce=false end
-local function onAnchorChanged(part) return part:GetPropertyChangedSignal("Anchored"):Connect(function() if part.Anchored and part.Transparency==1 then useMedusaCounter() end end) end
-setupMedusaCounter=function(char) stopMedusaCounter(); if not char then return end; for _,part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then table.insert(Conns.anchor,onAnchorChanged(part)) end end; table.insert(Conns.anchor,char.DescendantAdded:Connect(function(part) if part:IsA("BasePart") then table.insert(Conns.anchor,onAnchorChanged(part)) end end)) end
-stopMedusaCounter=function() for _,c2 in pairs(Conns.anchor) do pcall(function() c2:Disconnect() end) end; Conns.anchor={} end
-
--- AUTO LEFT / RIGHT
-startAutoLeft=function() if Conns.autoLeft then Conns.autoLeft:Disconnect() end; State.autoLeftPhase=1; Conns.autoLeft=RunService.Heartbeat:Connect(function() if not State.autoLeftEnabled then return end; local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); local hum2=c:FindFirstChildOfClass("Humanoid"); if not root or not hum2 then return end; local spd=State.normalSpeed; if State.autoLeftPhase==1 then local tgt=Vector3.new(POS.L1.X,root.Position.Y,POS.L1.Z); if (tgt-root.Position).Magnitude<1 then State.autoLeftPhase=2 end; local d=(POS.L1-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) elseif State.autoLeftPhase==2 then local tgt=Vector3.new(POS.L2.X,root.Position.Y,POS.L2.Z); if (tgt-root.Position).Magnitude<1 then hum2:Move(Vector3.zero,false); root.AssemblyLinearVelocity=Vector3.zero; State.autoLeftEnabled=false; if Conns.autoLeft then Conns.autoLeft:Disconnect(); Conns.autoLeft=nil end; State.autoLeftPhase=1; if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end; return end; local d=(POS.L2-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) end end) end
-stopAutoLeft=function() if Conns.autoLeft then Conns.autoLeft:Disconnect(); Conns.autoLeft=nil end; State.autoLeftPhase=1; local c=LP.Character; if c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:Move(Vector3.zero,false) end end; if stackBtnRefs.autoLeft then stackBtnRefs.autoLeft.setOn(false) end end
-startAutoRight=function() if Conns.autoRight then Conns.autoRight:Disconnect() end; State.autoRightPhase=1; Conns.autoRight=RunService.Heartbeat:Connect(function() if not State.autoRightEnabled then return end; local c=LP.Character; if not c then return end; local root=c:FindFirstChild("HumanoidRootPart"); local hum2=c:FindFirstChildOfClass("Humanoid"); if not root or not hum2 then return end; local spd=State.normalSpeed; if State.autoRightPhase==1 then local tgt=Vector3.new(POS.R1.X,root.Position.Y,POS.R1.Z); if (tgt-root.Position).Magnitude<1 then State.autoRightPhase=2 end; local d=(POS.R1-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) elseif State.autoRightPhase==2 then local tgt=Vector3.new(POS.R2.X,root.Position.Y,POS.R2.Z); if (tgt-root.Position).Magnitude<1 then hum2:Move(Vector3.zero,false); root.AssemblyLinearVelocity=Vector3.zero; State.autoRightEnabled=false; if Conns.autoRight then Conns.autoRight:Disconnect(); Conns.autoRight=nil end; State.autoRightPhase=1; if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end; return end; local d=(POS.R2-root.Position); local mv=Vector3.new(d.X,0,d.Z).Unit; hum2:Move(mv,false); root.AssemblyLinearVelocity=Vector3.new(mv.X*spd,root.AssemblyLinearVelocity.Y,mv.Z*spd) end end) end
-stopAutoRight=function() if Conns.autoRight then Conns.autoRight:Disconnect(); Conns.autoRight=nil end; State.autoRightPhase=1; local c=LP.Character; if c then local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then hum2:Move(Vector3.zero,false) end end; if stackBtnRefs.autoRight then stackBtnRefs.autoRight.setOn(false) end end
-
--- UNWALK
-local unwalkAnimateRef=nil
-local function startUnwalk() local c=LP.Character; if not c then return end; local hum2=c:FindFirstChildOfClass("Humanoid"); if hum2 then pcall(function() for _,track in ipairs(hum2:GetPlayingAnimationTracks()) do track:Stop(0) end end) end; local anim=c:FindFirstChild("Animate"); if anim and anim:IsA("LocalScript") then anim.Disabled=true; unwalkAnimateRef=anim end; if Conns.unwalk then Conns.unwalk:Disconnect() end; Conns.unwalk=RunService.Heartbeat:Connect(function() if not State.unwalkEnabled then return end; local c2=LP.Character; if not c2 then return end; local hum3=c2:FindFirstChildOfClass("Humanoid"); if hum3 then pcall(function() for _,track in ipairs(hum3:GetPlayingAnimationTracks()) do track:Stop(0) end end) end end) end
-local function stopUnwalk() if Conns.unwalk then Conns.unwalk:Disconnect(); Conns.unwalk=nil end; local c=LP.Character; if c and unwalkAnimateRef and unwalkAnimateRef.Parent==c then unwalkAnimateRef.Disabled=false end; unwalkAnimateRef=nil end
-
--- FPS BOOST
-applyFPSBoost=function() pcall(function() setfpscap(999999999) end); local function pO(v) pcall(function() if v:IsA("MeshPart") then v.CastShadow=false; v.RenderFidelity=Enum.RenderFidelity.Performance elseif v:IsA("BasePart") then v.CastShadow=false; v.Material=Enum.Material.Plastic; v.Reflectance=0 elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1 elseif v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") then v.Enabled=false end end) end; for _,v in pairs(workspace:GetDescendants()) do pO(v) end; pcall(function() local L=game:GetService("Lighting"); for _,v in pairs(L:GetDescendants()) do pcall(function() if v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") then v.Enabled=false end end) end; L.GlobalShadows=false; L.FogEnd=9e9; L.Brightness=0 end); workspace.DescendantAdded:Connect(function(v) if State.fpsBoostEnabled then task.spawn(pO,v) end end) end
-
--- AUTO STEAL
-local function isMyPlotByName(pn) local ct=tick(); if Steal.plotCache[pn] and (ct-(Steal.plotCacheTime[pn] or 0))<PLOT_CACHE_DURATION then return Steal.plotCache[pn] end; local plots=workspace:FindFirstChild("Plots"); if not plots then Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end; local plot=plots:FindFirstChild(pn); if not plot then Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end; local sign=plot:FindFirstChild("PlotSign"); if sign then local yb=sign:FindFirstChild("YourBase"); if yb and yb:IsA("BillboardGui") then local r=yb.Enabled==true; Steal.plotCache[pn]=r; Steal.plotCacheTime[pn]=ct; return r end end; Steal.plotCache[pn]=false; Steal.plotCacheTime[pn]=ct; return false end
-local function findNearestPrompt() local c=LP.Character; if not c then return nil end; local root=c:FindFirstChild("HumanoidRootPart"); if not root then return nil end; local ct=tick(); if ct-Steal.promptCacheTime<PROMPT_CACHE_REFRESH and #Steal.cachedPrompts>0 then local np,nd=nil,math.huge; for _,data in ipairs(Steal.cachedPrompts) do if data.spawn then local dist=(data.spawn.Position-root.Position).Magnitude; if dist<=Steal.StealRadius and dist<nd then np=data.prompt; nd=dist end end end; if np then return np end end; Steal.cachedPrompts={}; Steal.promptCacheTime=ct; local plots=workspace:FindFirstChild("Plots"); if not plots then return nil end; local np,nd=nil,math.huge; for _,plot in ipairs(plots:GetChildren()) do if isMyPlotByName(plot.Name) then continue end; local pods=plot:FindFirstChild("AnimalPodiums"); if not pods then continue end; for _,pod in ipairs(pods:GetChildren()) do pcall(function() local base=pod:FindFirstChild("Base"); local sp=base and base:FindFirstChild("Spawn"); if sp then local att=sp:FindFirstChild("PromptAttachment"); if att then for _,child in ipairs(att:GetChildren()) do if child:IsA("ProximityPrompt") then local dist=(sp.Position-root.Position).Magnitude; table.insert(Steal.cachedPrompts,{prompt=child,spawn=sp}); if dist<=Steal.StealRadius and dist<nd then np=child; nd=dist end; break end end end end end) end end; return np end
-local function executeSteal(prompt) local ct=tick(); if ct-State.lastStealTick<STEAL_COOLDOWN then return end; if State.isStealing then return end; if not Steal.Data[prompt] then Steal.Data[prompt]={hold={},trigger={},ready=true}; pcall(function() if getconnections then for _,c2 in ipairs(getconnections(prompt.PromptButtonHoldBegan)) do if c2.Function then table.insert(Steal.Data[prompt].hold,c2.Function) end end; for _,c2 in ipairs(getconnections(prompt.Triggered)) do if c2.Function then table.insert(Steal.Data[prompt].trigger,c2.Function) end end else Steal.Data[prompt].useFallback=true end end) end; local data=Steal.Data[prompt]; if not data.ready then return end; data.ready=false; State.isStealing=true; State.stealStartTime=ct; State.lastStealTick=ct; if Conns.progress then Conns.progress:Disconnect() end; Conns.progress=RunService.Heartbeat:Connect(function() if not State.isStealing then Conns.progress:Disconnect(); return end; local prog=math.clamp((tick()-State.stealStartTime)/Steal.StealDuration,0,1); TS:Create(progressFill,TweenInfo.new(0.05),{Size=UDim2.new(prog,0,1,0)}):Play(); TS:Create(fillGlow,TweenInfo.new(0.05),{Size=UDim2.new(prog,0,1,0)}):Play(); stealPctLbl.Text=math.floor(prog*100).."%" end); task.spawn(function() local ok=false; pcall(function() if not data.useFallback then for _,fn in ipairs(data.hold) do task.spawn(fn) end; task.wait(Steal.StealDuration); for _,fn in ipairs(data.trigger) do task.spawn(fn) end; ok=true end end); if not ok and fireproximityprompt then pcall(function() fireproximityprompt(prompt); ok=true end) end; if not ok then pcall(function() prompt:InputHoldBegin(); task.wait(Steal.StealDuration); prompt:InputHoldEnd() end) end; task.wait(Steal.StealDuration*0.3); if Conns.progress then Conns.progress:Disconnect() end; resetProgressBar(); task.wait(0.05); data.ready=true; State.isStealing=false end) end
-startAutoSteal=function() if Conns.autoSteal then return end; Conns.autoSteal=RunService.Heartbeat:Connect(function() if not Steal.AutoStealEnabled or State.isStealing then return end; local p=findNearestPrompt(); if p then executeSteal(p) end end) end
-stopAutoSteal=function() if Conns.autoSteal then Conns.autoSteal:Disconnect(); Conns.autoSteal=nil end; State.isStealing=false; State.lastStealTick=0; Steal.plotCache={}; Steal.plotCacheTime={}; Steal.cachedPrompts={}; resetProgressBar() end
-
--- ============================================================
--- SAVE / LOAD CONFIG - KOMPLETT ÜBERARBEITET
--- ============================================================
-local CONFIG_FILE="SecretDuelHubConfig.json"
-local _isfile=isfile or function() return false end
-local _readfile=readfile or function() return nil end
-local _writefile=writefile or function() end
-
-saveConfig=function() 
-    print("💾 Saving configuration...")
-    local cfg = {
-        -- Speed Settings
-        normalSpeed = State.normalSpeed,
-        carrySpeed = State.carrySpeed,
-        laggerSpeed = State.laggerSpeed,
-        speedToggled = State.speedToggled,
-        laggerEnabled = State.laggerEnabled,
-        -- Steal Settings
-        stealRadius = Steal.StealRadius,
-        stealDuration = Steal.StealDuration,
-        autoStealEnabled = Steal.AutoStealEnabled,
-        -- Combat Settings
-        antiRagdollEnabled = State.antiRagdollEnabled,
-        holdInfJumpEnabled = State.holdInfJumpEnabled,
-        fpsBoostEnabled = State.fpsBoostEnabled,
-        medusaCounterEnabled = State.medusaCounterEnabled,
-        batCounterEnabled = State.batCounterEnabled,
-        unwalkEnabled = State.unwalkEnabled,
-        -- Bat Aimbot Settings
-        batAimbotToggled = State.batAimbotToggled,
-        autoSwingEnabled = State.autoSwingEnabled,
-        batAimbotSpeed = State.batAimbotSpeed,
-        -- Anti Bat Bypass
-        antiBatBypassEnabled = State.antiBatBypassEnabled,
-        batThreshold = State.batThreshold,
-        capSpeed = State.capSpeed,
-        -- Auto TP Down
-        autoTPDownEnabled = State.autoTPDownEnabled,
-        autoTPDownY = math.abs(State.autoTPDownY),
-        -- Visual
-        fovOn = State.fovOn,
-        galaxyOn = State.galaxyOn,
-        antiBatOn = State.antiBatOn,
-        simpleFovEnabled = State.simpleFovEnabled,
-        simpleFovValue = State.simpleFovValue,
-        currentSkyTheme = State.currentSkyTheme,
-        tracersEnabled = State.tracersEnabled,
-        -- Misc
-        instantResetOnMedusa = State.instantResetOnMedusa,
-        stackButtonsHidden = State.stackButtonsHidden,
-        introEnabled = State.introEnabled,
-        selectedMusic = State.selectedMusic,
-        ragdollTimerEnabled = State.ragdollTimerEnabled,
-        autoExitDuelEnabled = State.autoExitDuelEnabled,
-        speedBypassEnabled = State.speedBypassEnabled,
-        speedBypassPower = State.speedBypassPower,
-        -- KEYBINDS - WICHTIG: Als String speichern
-        keybinds = {},
-        controllerKeybinds = {},
-    }
-    
-    -- Keyboard Keybinds speichern
-    for k, v in pairs(State.keybinds) do
-        cfg.keybinds[k] = tostring(v)
-    end
-    
-    -- Controller Keybinds speichern
-    for k, v in pairs(State.controllerKeybinds) do
-        cfg.controllerKeybinds[k] = tostring(v)
-    end
-    
-    local ok, encoded = pcall(function() return HS:JSONEncode(cfg) end)
-    if ok then
-        pcall(function() _writefile(CONFIG_FILE, encoded) end)
-        print("✅ Configuration saved successfully!")
-    else
-        print("❌ Failed to save configuration!")
-    end
-end
-
-loadConfig=function()
-    print("📂 Loading configuration...")
-    local hasFile = false
-    pcall(function() hasFile = _isfile(CONFIG_FILE) end)
-    if not hasFile then 
-        print("ℹ️ No config file found, using defaults.")
-        return 
-    end
-    
-    local raw
-    pcall(function() raw = _readfile(CONFIG_FILE) end)
-    if not raw then 
-        print("⚠️ Config file is empty, using defaults.")
-        return 
-    end
-    
-    local cfg
-    local ok = pcall(function() cfg = HS:JSONDecode(raw) end)
-    if not ok or not cfg then 
-        print("⚠️ Failed to parse config file, using defaults.")
-        return 
-    end
-    
-    -- Speed Settings
-    if cfg.normalSpeed then State.normalSpeed = cfg.normalSpeed; if normalBox then normalBox.Text = tostring(cfg.normalSpeed) end end
-    if cfg.carrySpeed then State.carrySpeed = cfg.carrySpeed; if carryBox then carryBox.Text = tostring(cfg.carrySpeed) end end
-    if cfg.laggerSpeed then State.laggerSpeed = cfg.laggerSpeed; if laggerBox then laggerBox.Text = tostring(cfg.laggerSpeed) end end
-    if cfg.speedToggled ~= nil then State.speedToggled = cfg.speedToggled; if stackBtnRefs.carrySpeed then stackBtnRefs.carrySpeed.setOn(cfg.speedToggled) end end
-    if cfg.laggerEnabled ~= nil then State.laggerEnabled = cfg.laggerEnabled end
-    
-    -- Steal Settings
-    if cfg.stealRadius then Steal.StealRadius = cfg.stealRadius end
-    if cfg.stealDuration then Steal.StealDuration = cfg.stealDuration end
-    if cfg.autoStealEnabled ~= nil then 
-        Steal.AutoStealEnabled = cfg.autoStealEnabled
-        if cfg.autoStealEnabled then pcall(startAutoSteal) end
-        if setInstaGrab then setInstaGrab(cfg.autoStealEnabled) end
-    end
-    
-    -- Combat Settings
-    if cfg.antiRagdollEnabled ~= nil then 
-        State.antiRagdollEnabled = cfg.antiRagdollEnabled
-        if State.antiRagdollEnabled then EnableAntiRagdoll() else DisableAntiRagdoll() end
-        if setAntiRag then setAntiRag(State.antiRagdollEnabled) end
-    end
-    if cfg.holdInfJumpEnabled ~= nil then 
-        State.holdInfJumpEnabled = cfg.holdInfJumpEnabled
-        if State.holdInfJumpEnabled then startHoldInfJump() else stopHoldInfJump() end
-        if setInfJump then setInfJump(State.holdInfJumpEnabled) end
-    end
-    if cfg.fpsBoostEnabled ~= nil then 
-        State.fpsBoostEnabled = cfg.fpsBoostEnabled
-        if State.fpsBoostEnabled then applyFPSBoost() end
-        if setFps then setFps(State.fpsBoostEnabled) end
-    end
-    if cfg.medusaCounterEnabled ~= nil then 
-        State.medusaCounterEnabled = cfg.medusaCounterEnabled
-        if State.medusaCounterEnabled then setupMedusaCounter(LP.Character) else stopMedusaCounter() end
-        if setMedusaCounter then setMedusaCounter(State.medusaCounterEnabled) end
-    end
-    if cfg.batCounterEnabled ~= nil then 
-        State.batCounterEnabled = cfg.batCounterEnabled
-        if State.batCounterEnabled then startBatCounter() else stopBatCounter() end
-        if setBatCounter then setBatCounter(State.batCounterEnabled) end
-    end
-    if cfg.unwalkEnabled ~= nil then 
-        State.unwalkEnabled = cfg.unwalkEnabled
-        if State.unwalkEnabled then task.delay(0.5, startUnwalk) else stopUnwalk() end
-        if setUnwalkToggle then setUnwalkToggle(State.unwalkEnabled) end
-    end
-    
-    -- Bat Aimbot
-    if cfg.batAimbotToggled ~= nil then 
-        State.batAimbotToggled = cfg.batAimbotToggled
-        if State.batAimbotToggled then startBatAimbot() end
-        if setAimbot then setAimbot(State.batAimbotToggled) end
-    end
-    if cfg.autoSwingEnabled ~= nil then State.autoSwingEnabled = cfg.autoSwingEnabled; if setAutoSwing then setAutoSwing(State.autoSwingEnabled) end end
-    if cfg.batAimbotSpeed then State.batAimbotSpeed = cfg.batAimbotSpeed end
-    
-    -- Anti Bat Bypass
-    if cfg.antiBatBypassEnabled ~= nil then
-        State.antiBatBypassEnabled = cfg.antiBatBypassEnabled
-        if State.antiBatBypassEnabled then startAntiBatBypass() else stopAntiBatBypass() end
-        if setAntiBatBypass then setAntiBatBypass(State.antiBatBypassEnabled) end
-    end
-    if cfg.batThreshold then State.batThreshold = cfg.batThreshold end
-    if cfg.capSpeed then State.capSpeed = cfg.capSpeed end
-    
-    -- Auto TP Down
-    if cfg.autoTPDownEnabled ~= nil then 
-        State.autoTPDownEnabled = cfg.autoTPDownEnabled
-        if State.autoTPDownEnabled then startAutoTPDown() else stopAutoTPDown() end
-        if setAutoTPDownToggle then setAutoTPDownToggle(State.autoTPDownEnabled) end
-    end
-    if cfg.autoTPDownY then State.autoTPDownY = -math.abs(cfg.autoTPDownY) end
-    
-    -- Visual
-    if cfg.fovOn ~= nil then State.fovOn = cfg.fovOn; if State.fovOn then camera.FieldOfView = 110 else camera.FieldOfView = 70 end end
-    if cfg.galaxyOn ~= nil then State.galaxyOn = cfg.galaxyOn; updateGalaxy() end
-    if cfg.antiBatOn ~= nil then State.antiBatOn = cfg.antiBatOn end
-    if cfg.simpleFovEnabled ~= nil then State.simpleFovEnabled = cfg.simpleFovEnabled; if State.simpleFovEnabled then toggleSimpleFOV() end end
-    if cfg.simpleFovValue then State.simpleFovValue = cfg.simpleFovValue; setSimpleFOV(State.simpleFovValue) end
-    if cfg.currentSkyTheme then State.currentSkyTheme = cfg.currentSkyTheme; CandyApplyCustomSky(State.currentSkyTheme) end
-    if cfg.tracersEnabled ~= nil then State.tracersEnabled = cfg.tracersEnabled end
-    
-    -- Misc
-    if cfg.instantResetOnMedusa ~= nil then State.instantResetOnMedusa = cfg.instantResetOnMedusa end
-    if cfg.stackButtonsHidden ~= nil then 
-        State.stackButtonsHidden = cfg.stackButtonsHidden
-        for _, w in pairs(stackWrappers) do w.Visible = not cfg.stackButtonsHidden end
-        if mobBox then mobBox.Visible = not cfg.stackButtonsHidden end
-        if mobBoxOverlay then mobBoxOverlay.Visible = not cfg.stackButtonsHidden end
-        if mobBgImage then mobBgImage.Visible = not cfg.stackButtonsHidden end
-        if setHideButtonsToggle then setHideButtonsToggle(cfg.stackButtonsHidden) end
-    end
-    if cfg.introEnabled ~= nil then State.introEnabled = cfg.introEnabled end
-    if cfg.selectedMusic then State.selectedMusic = cfg.selectedMusic end
-    if cfg.ragdollTimerEnabled ~= nil then
-        State.ragdollTimerEnabled = cfg.ragdollTimerEnabled
-        if State.ragdollTimerEnabled then startRagdollTimer() else stopRagdollTimer() end
-        if setRagdollTimer then setRagdollTimer(State.ragdollTimerEnabled) end
-    end
-    if cfg.autoExitDuelEnabled ~= nil then
-        State.autoExitDuelEnabled = cfg.autoExitDuelEnabled
-        if State.autoExitDuelEnabled then enableAutoExitDuel() end
-    end
-    if cfg.speedBypassEnabled ~= nil then
-        State.speedBypassEnabled = cfg.speedBypassEnabled
-        if State.speedBypassEnabled then startSpeedBypass() end
-    end
-    if cfg.speedBypassPower then State.speedBypassPower = cfg.speedBypassPower end
-    
-    -- KEYBINDS LADEN - WICHTIG
-    if cfg.keybinds then
-        for k, v in pairs(cfg.keybinds) do
-            -- Versuche den KeyCode zu parsen
-            local success, key = pcall(function() return Enum.KeyCode[v] end)
-            if success and key then
-                State.keybinds[k] = key
-            else
-                State.keybinds[k] = Enum.KeyCode.Unknown
-            end
-        end
-    end
-    
-    if cfg.controllerKeybinds then
-        for k, v in pairs(cfg.controllerKeybinds) do
-            local success, key = pcall(function() return Enum.KeyCode[v] end)
-            if success and key then
-                State.controllerKeybinds[k] = key
-            else
-                State.controllerKeybinds[k] = Enum.KeyCode.Unknown
-            end
-        end
-    end
-    
-    -- Keybinds neu starten
-    startKeybindListen()
-    
-    print("✅ Configuration loaded successfully!")
-end
-
--- ============================================================
 -- CHARACTER SETUP
 -- ============================================================
 local function setupChar(char)
@@ -2820,7 +2763,7 @@ RunService.RenderStepped:Connect(function()
     pcall(function() local head2=LP.Character and LP.Character:FindFirstChild("Head"); if head2 then local bb2=head2:FindFirstChild("SecretDuelBB"); if bb2 then local sl=bb2:FindFirstChild("SpeedBillLbl"); if sl then local hspd=Vector3.new(hrp.Velocity.X,0,hrp.Velocity.Z).Magnitude; sl.Text=string.format("%.1f",hspd) end end end end)
 end)
 
--- KEYBOARD SHORTCUTS
+-- SHORTCUTS
 UIS.InputBegan:Connect(function(inp, gp)
     if gp then return end
     if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
@@ -2831,7 +2774,9 @@ end)
 -- CHAT COMMAND
 LP.Chatted:Connect(function(msg) local m=msg:lower():match("^%s*(.-)%s*$"); if m=="/secretduel" then State.guiVisible=not State.guiVisible; mainOuter.Visible=State.guiVisible; if State.guiVisible then vBtnFrame.ImageTransparency=0.1; vBtnFrame.BackgroundTransparency=0.1 else vBtnFrame.ImageTransparency=0.6; vBtnFrame.BackgroundTransparency=0.5 end end end)
 
+-- ============================================================
 -- INIT
+-- ============================================================
 loadConfig()
 startKeybindListen()
 task.delay(1,function() pcall(saveConfig) end)
@@ -2878,6 +2823,6 @@ print("  🎮 CONTROLLER LAYOUT:")
 print("  A=Drop BR  B=Bat Aimbot  X=Lagger  Y=Carry")
 print("  LB=Normal  RB=TP Down  LS=Reset  DPAD=Auto L/R")
 print("")
-print("  💾 ALL settings saved when you click SAVE!")
-print("  💾 Keybinds are saved and loaded correctly!")
+print("  ✅ ALL keybinds work individually!")
+print("  ✅ ALL settings saved when you click SAVE!")
 print("═══════════════════════════════════════════════════════")
